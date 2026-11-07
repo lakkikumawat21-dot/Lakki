@@ -129,10 +129,11 @@ Android 10+ (`targetSdk >= 29`) enforces W^X (noexec) on the private app directo
 ## 6. Build Verification & Release Summary
 
 - **GitHub Repository**: `lakkikumawat21-dot/Lakki`
-- **Latest Commit**: [`87fbada6`](https://github.com/lakkikumawat21-dot/Lakki/commit/87fbada69775634d0e96474d5b9bd5b63ad7512d)
-- **GitHub Actions Build Run**: [Run #42372694844](https://github.com/lakkikumawat21-dot/Lakki/actions/runs/42372694844) — **SUCCESS**
+- **Latest Commit**: [`5742ac31`](https://github.com/lakkikumawat21-dot/Lakki/commit/5742ac317ac9f6915ee8f48afcda0c061f2dec04)
+- **GitHub Actions Build Run**: [Run #42373670105](https://github.com/lakkikumawat21-dot/Lakki/actions/runs/42373670105) — **SUCCESS (Green)**
 - **Release Tag**: `v1.0.0-apk`
-- **Generated APK**: `app-debug.apk` (9,822,287 bytes / ~9.82 MB)
+- **Generated APK**: `app-debug.apk` (9,822,903 bytes / ~9.82 MB)
 - **Direct Download Link**: [app-debug.apk](https://github.com/lakkikumawat21-dot/Lakki/releases/download/v1.0.0-apk/app-debug.apk)
 - **Core Code Freeze**: 100% frozen (0 lines changed in `hermes-agent/`).
+
 
