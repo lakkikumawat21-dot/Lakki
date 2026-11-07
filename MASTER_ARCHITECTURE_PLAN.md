@@ -87,16 +87,27 @@ Based on the decompiled reference APK (`ai.sol.hermes`, TargetSDK 36, MinSDK 32)
 ## 3. GitHub Releases & Distribution Asset Inventory
 
 Inspection of `https://api.github.com/repos/goldenduo/XermesRelease/releases`:
-- Latest release tags:
-  - `v2026.11.06-opencode6-isolated-node`: `arm64-v8a-lite.7z` (~696 MB), `arm64-v8a-openchamber.7z` (~551 MB)
-  - `v2026.10.31-codex-0.166.0`: `arm64-v8a-ubuntu.7z` (22 MB)
-  - `v2026.09.02-model-startup`: `ubuntu.7z` (22 MB)
+- Latest release tags & asset sizes:
+  - `v2026.11.06-opencode6-isolated-node`:
+    - `arm64-v8a-lite.7z` (696,914,959 bytes / ~696.9 MB)
+    - `arm64-v8a-openchamber.7z` (551,943,707 bytes / ~551.9 MB)
+  - `v2026.10.31-codex-0.166.0`:
+    - `arm64-v8a-ubuntu.7z` (22,069,276 bytes / ~22.0 MB)
+    - `arm64-v8a-standard.7z` (13,973,628 bytes / ~14.0 MB)
+    - `arm64-v8a-full.7z` (221,235,444 bytes / ~221.2 MB)
+    - `arm64-v8a-lite.7z` (650,880,163 bytes / ~650.9 MB)
+  - Primary Latest Redirect:
+    - `arch-ubuntu.7z` -> `https://github.com/goldenduo/XermesRelease/releases/latest/download/arch-ubuntu.7z` (~22.0 MB)
 - Official Ubuntu Cloud RootFS:
   - `https://cdimage.ubuntu.com/ubuntu-base/releases/noble/release/ubuntu-base-24.04.3-base-arm64.tar.gz` (28.4 MB)
 - Mirror Fallbacks:
   - `https://mirror.ghproxy.com/`
   - `https://gh-proxy.com/`
   - `https://ghproxy.net/`
+  - `https://share.126111.xyz/`
+  - `https://tshare.126111.xyz/`
+  - `https://cdn.jsdelivr.net/gh/`
+  - `https://fastly.jsdelivr.net/gh/`
 
 ---
 
@@ -108,7 +119,44 @@ Android 10+ (`targetSdk >= 29`) enforces W^X (noexec) on the private app directo
    - `libqroot.so` (1.02 MB alias)
    - `libbusybox.so` (1.5 MB statically linked 64-bit ARM BusyBox)
 2. In `build.gradle`, `useLegacyPackaging = true` forces Android Package Manager to extract these libraries into `context.getApplicationInfo().nativeLibraryDir` with executable (`+x`) permissions.
-3. `ProcessBuilder` executes `nativeLibraryDir + "/libproot.so"`.
+3. Fallback extraction routine in `InstallationManager.findOrExtractProotBinary` unpacks `assets/bin/proot-arm64` into `<filesDir>/bin/proot` and applies `Os.chmod(0755)`.
+4. Exact `ProcessBuilder` execution command:
+   ```bash
+   /data/app/.../lib/arm64/libproot.so \
+     -r /data/data/ai.sol.hermes/files/rootfs \
+     -0 \
+     -b /dev \
+     -b /proc \
+     -b /sys \
+     -b /data/data/ai.sol.hermes/files/workspace:/root/workspace \
+     -b /data/data/ai.sol.hermes/files/hermes_data:/root/.hermes \
+     -w /root/workspace \
+     /bin/bash -lc "cd /root/workspace && exec /usr/local/bin/hermes dashboard --host 127.0.0.2 --port 39067 --no-open --skip-build"
+   ```
+5. Environment variables supplied to PRoot child process:
+   - `HERMES_HOME=/root/.hermes`
+   - `HERMES_AGENT_ROOT=/usr/local/lib/hermes-agent`
+   - `HERMES_BIN=/usr/local/bin/hermes`
+   - `HERMES_ANDROID_CAPABILITY_PORT=43097`
+   - `HERMES_ANDROID_CAPABILITY_TOKEN=hermes_local_bridge_token`
+   - `HERMES_REAL_HOME=/root`
+   - `HERMES_GATEWAY_DETACHED=1`
+   - `HERMES_DISABLE_LAZY_INSTALLS=1`
+   - `HERMES_EXEC_ASK=1`
+   - `HERMES_QUIET=1`
+   - `HERMES_STARTUP_WATCHDOG_TIMEOUT_S=300`
+   - `PORT=39067`
+   - `QROOT_ANDROID_PACKAGE=ai.sol.hermes`
+   - `QROOT_GPU=llvmpipe`
+   - `QROOT_IN_STUB=1`
+   - `QROOT_LOOPBACK_NAMESPACE=hermes-agent`
+   - `QROOT_LOOPBACK_UNIX=1`
+   - `QROOT_STUB_BLOCK_TARGET_SECCOMP=1`
+   - `HOME=/root`
+   - `USER=root`
+   - `TERM=xterm-256color`
+   - `TMPDIR=/tmp`
+   - `PATH=/opt/qroot/bin:/usr/local/lib/hermes-agent/.hermes/bin:/usr/local/lib/hermes-agent/venv/bin:/usr/local/bin:/root/.local/bin:/root/.hermes/node/bin:/root/.hermes/bin:/root/.hermes/tools/node-26.12.1-linux-arm64/bin:/root/.hermes/tools/python-3.14.9+20241021-linux-arm64/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin`
 
 ---
 
@@ -129,10 +177,12 @@ Android 10+ (`targetSdk >= 29`) enforces W^X (noexec) on the private app directo
 ## 6. Build Verification & Release Summary
 
 - **GitHub Repository**: `lakkikumawat21-dot/Lakki`
-- **Latest Commit**: [`5742ac31`](https://github.com/lakkikumawat21-dot/Lakki/commit/5742ac317ac9f6915ee8f48afcda0c061f2dec04)
-- **GitHub Actions Build Run**: [Run #42373670105](https://github.com/lakkikumawat21-dot/Lakki/actions/runs/42373670105) — **SUCCESS (Green)**
-- **Release Tag**: `v1.0.0-apk` -> Upgraded to `v3.10.7-apk`
-- **Generated APK**: `app-debug.apk` (9,822,903 bytes / ~9.82 MB)
+- **Latest Commit**: [`64b7f3ad`](https://github.com/lakkikumawat21-dot/Lakki/commit/64b7f3ad8eb6a5f782fe286e1e359fe05634e565)
+- **GitHub Actions Build Run**: [Run #42376907374](https://github.com/lakkikumawat21-dot/Lakki/actions/runs/42376907374) — **SUCCESS (Green)**
+- **Release Tag**: `v3.10.7-apk`
+- **Release Page**: https://github.com/lakkikumawat21-dot/Lakki/releases/tag/v3.10.7-apk
+- **Direct APK Download**: https://github.com/lakkikumawat21-dot/Lakki/releases/download/v3.10.7-apk/app-debug.apk
+- **Generated APK Size**: ~9.82 MB (9,822,903 bytes)
 - **Core Code Freeze**: 100% frozen (0 lines changed in `hermes-agent/`).
 
 ---
