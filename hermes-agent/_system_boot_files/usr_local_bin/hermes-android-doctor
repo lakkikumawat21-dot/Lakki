@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -u
+
+printf '%s\n' 'Hermes Android prerequisite doctor'
+check() {
+  local command="$1" layer="$2"
+  if command -v "$command" >/dev/null 2>&1; then
+    printf '%-10s OK       %s\n' "$layer" "$command"
+  else
+    printf '%-10s MISSING  %s\n' "$layer" "$command"
+  fi
+}
+check python3 lite
+check node lite
+check curl lite
+check git lite
+check hermes lite
+check jq standard
+check rg standard
+check sqlite3 standard
+check ssh lite
+check sshd lite
+HERMES_AGENT_ROOT="${HERMES_AGENT_ROOT:-/usr/local/lib/hermes-agent}"
+VENV_PY="$HERMES_AGENT_ROOT/venv/bin/python"
+if [ -x "$VENV_PY" ] && "$VENV_PY" -c "import ddgs" >/dev/null 2>&1; then
+  printf '%-10s OK       ddgs (DuckDuckGo web search)\n' lite
+else
+  printf '%-10s MISSING  ddgs (web search unavailable without it)\n' lite
+fi
+if command -v agent-browser >/dev/null 2>&1 || [ -x "$HERMES_AGENT_ROOT/node_modules/.bin/agent-browser" ]; then
+  printf '%-10s OK       agent-browser\n' standard
+else
+  printf '%-10s MISSING  agent-browser (browser/browser-cdp/computer-use need it)\n' standard
+fi
+if find "${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}" -maxdepth 4 -type f \
+  \( -name chromium -o -name chrome -o -name headless_shell -o -name chrome-headless-shell \) \
+  -perm /111 -print -quit 2>/dev/null | grep -q .; then
+  printf '%-10s OK       chromium (agent-browser engine)\n' standard
+else
+  printf '%-10s MISSING  chromium (browser tools are hidden without it)\n' standard
+fi
+if grep -qE '^\s*backend:\s*(off|false)\s*(#.*)?$' "${HERMES_HOME:-$HOME/.hermes}/config.yaml" 2>/dev/null; then
+  printf '%-10s OK       browser.backend=off (agent-browser tools active)\n' standard
+else
+  printf '%-10s MISSING  browser.backend=off (browser/browser-cdp tools stay hidden)\n' standard
+fi
+if command -v camofox-browser >/dev/null 2>&1 || [ -x "$HOME/.hermes/node/bin/camofox-browser" ]; then
+  printf '%-10s OK       camofox-browser\n' full
+else
+  printf '%-10s MISSING  camofox-browser (Full-only browser server)\n' full
+fi
