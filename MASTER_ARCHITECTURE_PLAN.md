@@ -177,12 +177,18 @@ Android 10+ (`targetSdk >= 29`) enforces W^X (noexec) on the private app directo
 ## 6. Build Verification & Release Summary
 
 - **GitHub Repository**: `lakkikumawat21-dot/Lakki`
-- **Latest Commit**: [`64b7f3ad`](https://github.com/lakkikumawat21-dot/Lakki/commit/64b7f3ad8eb6a5f782fe286e1e359fe05634e565)
-- **GitHub Actions Build Run**: [Run #42376907374](https://github.com/lakkikumawat21-dot/Lakki/actions/runs/42376907374) — **SUCCESS (Green)**
-- **Release Tag**: `v3.10.7-apk`
-- **Release Page**: https://github.com/lakkikumawat21-dot/Lakki/releases/tag/v3.10.7-apk
-- **Direct APK Download**: https://github.com/lakkikumawat21-dot/Lakki/releases/download/v3.10.7-apk/app-debug.apk
-- **Generated APK Size**: ~9.82 MB (9,822,903 bytes)
+- **Latest Commit**: [`0b821bc2`](https://github.com/lakkikumawat21-dot/Lakki/commit/0b821bc2)
+- **Standalone APK Compilation**: Built locally with Android SDK 34 (`platforms/android-34`, `build-tools/34.0.0`) and Gradle 8.5 in 1m 59s.
+- **Generated Standalone APK**: `app-debug.apk` (15,147,725 bytes / ~15 MB)
+- **Packaged Native ARM64 Libraries (`unzip -l` verified)**:
+  - `lib/arm64-v8a/lib7za.so` (3.10 MB, statically linked ARM64 7-Zip archiver)
+  - `lib/arm64-v8a/lib7z.so` (3.10 MB, statically linked ARM64 7-Zip alias)
+  - `lib/arm64-v8a/libbusybox.so` (1.48 MB, statically linked ARM64 BusyBox)
+  - `lib/arm64-v8a/libproot.so` (1.02 MB, statically linked ARM64 PRoot)
+  - `lib/arm64-v8a/libqroot.so` (1.02 MB, statically linked ARM64 QROOT)
+- **Checksums**:
+  - SHA256: `5370e4cb1fb8bf2f12ea05cbaf6216c2d25a0b92f5091d3cd2e1488da2b06c8f`
+  - MD5: `8a6e83db74e4c9715848a04c03377b70`
 - **Core Code Freeze**: 100% frozen (0 lines changed in `hermes-agent/`).
 
 ---
