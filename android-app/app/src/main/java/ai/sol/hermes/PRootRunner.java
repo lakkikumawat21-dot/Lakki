@@ -85,6 +85,9 @@ public class PRootRunner {
             cmd.add("/sys");
             cmd.add("-b");
             cmd.add(workspaceDir.getAbsolutePath() + ":/root/workspace");
+            File hermesDataDir = new HermesDataManager(context).getDataDirectory();
+            cmd.add("-b");
+            cmd.add(hermesDataDir.getAbsolutePath() + ":/root/.hermes");
             cmd.add("-w");
             cmd.add("/root/workspace");
             cmd.add(shellPath);

@@ -19,6 +19,7 @@ import java.io.InputStream;
 /**
  * Universal archive unpacker supporting both .7z (SevenZ) and .tar.gz (TarGz).
  * Restores POSIX symbolic links and file execution permissions for Linux rootfs.
+ * Gracefully handles Android sandbox restrictions (skips /dev node conflicts).
  */
 public class ArchiveExtractor {
     private static final String TAG = "ArchiveExtractor";
@@ -49,6 +50,12 @@ public class ArchiveExtractor {
             while ((entry = sevenZFile.getNextEntry()) != null) {
                 count++;
                 String entryName = entry.getName();
+
+                // Skip /dev nodes (PRoot dynamically binds host /dev)
+                if (entryName.startsWith("dev/") || entryName.equals("dev")) {
+                    continue;
+                }
+
                 File destFile = new File(destDir, entryName);
 
                 // Path traversal protection
@@ -68,6 +75,8 @@ public class ArchiveExtractor {
                         while ((len = sevenZFile.read(buffer)) > 0) {
                             fos.write(buffer, 0, len);
                         }
+                    } catch (Throwable writeError) {
+                        Log.w(TAG, "Write skipped for " + entryName + ": " + writeError.getMessage());
                     }
 
                     // Set executable permissions for binaries / scripts
@@ -110,6 +119,12 @@ public class ArchiveExtractor {
             while ((entry = tais.getNextTarEntry()) != null) {
                 count++;
                 String entryName = entry.getName();
+
+                // Skip /dev nodes (PRoot dynamically binds host /dev)
+                if (entryName.startsWith("dev/") || entryName.equals("dev")) {
+                    continue;
+                }
+
                 File destFile = new File(destDir, entryName);
 
                 String canonical = destFile.getCanonicalPath();
@@ -140,6 +155,8 @@ public class ArchiveExtractor {
                         while ((len = tais.read(buffer)) > 0) {
                             fos.write(buffer, 0, len);
                         }
+                    } catch (Throwable writeError) {
+                        Log.w(TAG, "Write skipped for " + entryName + ": " + writeError.getMessage());
                     }
 
                     int mode = entry.getMode();
