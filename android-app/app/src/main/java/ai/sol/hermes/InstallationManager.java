@@ -117,6 +117,90 @@ public class InstallationManager {
         return fallbackProot.getAbsolutePath();
     }
 
+    public static String findOrExtract7zaBinary(Context context) {
+        String nativeDir = context.getApplicationInfo().nativeLibraryDir;
+        File lib7za = new File(nativeDir, "lib7za.so");
+        if (lib7za.exists() && lib7za.canExecute()) {
+            Log.i(TAG, "Found executable 7za in nativeLibraryDir: " + lib7za.getAbsolutePath());
+            return lib7za.getAbsolutePath();
+        }
+
+        File lib7z = new File(nativeDir, "lib7z.so");
+        if (lib7z.exists() && lib7z.canExecute()) {
+            Log.i(TAG, "Found executable 7z in nativeLibraryDir: " + lib7z.getAbsolutePath());
+            return lib7z.getAbsolutePath();
+        }
+
+        File binDir = new File(context.getFilesDir(), BIN_DIR);
+        if (!binDir.exists()) binDir.mkdirs();
+        File fallback7za = new File(binDir, "7za");
+
+        if (!fallback7za.exists() || fallback7za.length() == 0) {
+            try {
+                Log.i(TAG, "Extracting bundled 7za binary from assets...");
+                try (InputStream in = context.getAssets().open("bin/7za-arm64");
+                     FileOutputStream out = new FileOutputStream(fallback7za)) {
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                }
+                setExecutable(fallback7za);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to unpack asset 7za: " + e.getMessage());
+            }
+        }
+
+        if (fallback7za.exists()) {
+            setExecutable(fallback7za);
+            return fallback7za.getAbsolutePath();
+        }
+
+        if (lib7za.exists()) return lib7za.getAbsolutePath();
+        if (lib7z.exists()) return lib7z.getAbsolutePath();
+
+        return fallback7za.getAbsolutePath();
+    }
+
+    public static String findOrExtractBusyboxBinary(Context context) {
+        String nativeDir = context.getApplicationInfo().nativeLibraryDir;
+        File libBusybox = new File(nativeDir, "libbusybox.so");
+        if (libBusybox.exists() && libBusybox.canExecute()) {
+            Log.i(TAG, "Found executable BusyBox in nativeLibraryDir: " + libBusybox.getAbsolutePath());
+            return libBusybox.getAbsolutePath();
+        }
+
+        File binDir = new File(context.getFilesDir(), BIN_DIR);
+        if (!binDir.exists()) binDir.mkdirs();
+        File fallbackBusybox = new File(binDir, "busybox");
+
+        if (!fallbackBusybox.exists() || fallbackBusybox.length() == 0) {
+            try {
+                Log.i(TAG, "Extracting bundled BusyBox binary from assets...");
+                try (InputStream in = context.getAssets().open("bin/busybox-arm64");
+                     FileOutputStream out = new FileOutputStream(fallbackBusybox)) {
+                    byte[] buf = new byte[8192];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                }
+                setExecutable(fallbackBusybox);
+            } catch (Exception e) {
+                Log.w(TAG, "Failed to unpack asset BusyBox: " + e.getMessage());
+            }
+        }
+
+        if (fallbackBusybox.exists()) {
+            setExecutable(fallbackBusybox);
+            return fallbackBusybox.getAbsolutePath();
+        }
+
+        if (libBusybox.exists()) return libBusybox.getAbsolutePath();
+        return fallbackBusybox.getAbsolutePath();
+    }
+
     public static void setExecutable(File file) {
         try {
             file.setExecutable(true, false);

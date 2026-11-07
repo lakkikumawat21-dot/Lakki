@@ -67,6 +67,9 @@ public class PRootRunner {
             File workspaceDir = InstallationManager.getWorkspaceDir(context);
 
             File bashFile = new File(rootfsDir, "bin/bash");
+            File shFile = new File(rootfsDir, "bin/sh");
+            if (bashFile.exists()) InstallationManager.setExecutable(bashFile);
+            if (shFile.exists()) InstallationManager.setExecutable(shFile);
             String shellPath = bashFile.exists() ? "/bin/bash" : "/bin/sh";
 
             // Boot command directly matching BOOT_ARCHITECTURE.md

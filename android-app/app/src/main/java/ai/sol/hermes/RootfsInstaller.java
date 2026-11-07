@@ -100,9 +100,13 @@ public class RootfsInstaller {
                 File archiveFile = new File(filesDir, archiveName);
 
                 // Step 1: Ensure native binaries are present
-                notifyProgress(callback, 5, "Preparing Native Binaries", "Verifying libproot.so and libbusybox.so...");
+                notifyProgress(callback, 5, "Preparing Native Binaries", "Verifying libproot.so, libbusybox.so, and lib7za.so...");
                 String prootPath = InstallationManager.findOrExtractProotBinary(context);
-                notifyLog(callback, "[+] PRoot binary ready at: " + prootPath);
+                String sevenZaPath = InstallationManager.findOrExtract7zaBinary(context);
+                String busyboxPath = InstallationManager.findOrExtractBusyboxBinary(context);
+                notifyLog(callback, "[+] Native PRoot engine: " + prootPath);
+                notifyLog(callback, "[+] Native 7-Zip archiver: " + sevenZaPath);
+                notifyLog(callback, "[+] Native BusyBox utility: " + busyboxPath);
 
                 // Step 2: Download with mirror failover
                 notifyProgress(callback, 10, "Downloading RootFS", "Connecting to primary/mirror CDNs (" + profile.approxSize + ")...");
@@ -115,8 +119,8 @@ public class RootfsInstaller {
                 notifyProgress(callback, 65, "Extracting Linux Filesystem", "Restoring system tree and symbolic links...");
                 notifyLog(callback, "[*] Extracting " + archiveFile.getName() + " into " + rootfsDir.getAbsolutePath() + "...");
 
-                int count = ArchiveExtractor.extract(archiveFile, rootfsDir, (extractedCount, currentEntry) -> {
-                    if (extractedCount % 500 == 0) {
+                int count = ArchiveExtractor.extract(context, archiveFile, rootfsDir, (extractedCount, currentEntry) -> {
+                    if (extractedCount % 100 == 0) {
                         notifyLog(callback, "Extracting: " + currentEntry + " (#" + extractedCount + ")");
                     }
                 });
