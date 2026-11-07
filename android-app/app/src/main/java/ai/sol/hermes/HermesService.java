@@ -14,8 +14,8 @@ import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 /**
- * Background Foreground Service to maintain the Hermes Agent capability bridge alive.
- * Full compliance with Android 13/14 Foreground Service requirements.
+ * Background Foreground Service to maintain the Hermes Agent capability bridge
+ * and internal PRoot Linux engine running.
  */
 public class HermesService extends Service {
     private static final String TAG = "HermesService";
@@ -23,6 +23,7 @@ public class HermesService extends Service {
     public static final String CHANNEL_ID = "hermes_service_channel";
 
     private CapabilityServer capabilityServer;
+    private PRootRunner prootRunner;
 
     @Override
     public void onCreate() {
@@ -32,7 +33,7 @@ public class HermesService extends Service {
         try {
             Notification notification = new NotificationCompat.Builder(this, CHANNEL_ID)
                     .setContentTitle("Hermes Agent Engine")
-                    .setContentText("Local capability bridge active on port 43097")
+                    .setContentText("Local Linux PRoot engine & capability bridge active")
                     .setSmallIcon(android.R.drawable.ic_dialog_info)
                     .setPriority(NotificationCompat.PRIORITY_LOW)
                     .setOngoing(true)
@@ -56,12 +57,26 @@ public class HermesService extends Service {
             Log.e(TAG, "startForeground failed gracefully: " + t.getMessage(), t);
         }
 
+        // 1. Start Capability REST server on port 43097
         try {
             capabilityServer = new CapabilityServer(this, CapabilityServer.DEFAULT_PORT);
             capabilityServer.start();
-            Log.i(TAG, "HermesService initialized and CapabilityServer started.");
+            Log.i(TAG, "CapabilityServer started on port " + CapabilityServer.DEFAULT_PORT);
         } catch (Throwable t) {
             Log.e(TAG, "Failed to start CapabilityServer: " + t.getMessage(), t);
+        }
+
+        // 2. Start internal PRoot Linux engine if installed
+        if (InstallationManager.isInstalled(this)) {
+            try {
+                prootRunner = PRootRunner.getInstance(this);
+                prootRunner.start();
+                Log.i(TAG, "Internal PRoot engine started.");
+            } catch (Throwable t) {
+                Log.e(TAG, "Failed to launch PRoot runner: " + t.getMessage(), t);
+            }
+        } else {
+            Log.i(TAG, "Hermes subsystem not installed yet. Waiting for setup.");
         }
     }
 
@@ -73,7 +88,7 @@ public class HermesService extends Service {
                         "Hermes Agent Service",
                         NotificationManager.IMPORTANCE_LOW
                 );
-                channel.setDescription("Keeps the Hermes agent capability server running");
+                channel.setDescription("Keeps the Hermes agent capability server and PRoot engine running");
                 NotificationManager manager = getSystemService(NotificationManager.class);
                 if (manager != null) {
                     manager.createNotificationChannel(channel);
@@ -86,12 +101,23 @@ public class HermesService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        if (intent != null && "ACTION_START_ENGINE".equals(intent.getAction())) {
+            if (InstallationManager.isInstalled(this)) {
+                if (prootRunner == null) {
+                    prootRunner = PRootRunner.getInstance(this);
+                }
+                prootRunner.start();
+            }
+        }
         return START_STICKY;
     }
 
     @Override
     public void onDestroy() {
         super.onDestroy();
+        if (prootRunner != null) {
+            prootRunner.stop();
+        }
         if (capabilityServer != null) {
             capabilityServer.stop();
         }

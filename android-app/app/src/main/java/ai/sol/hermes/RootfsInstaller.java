@@ -1,0 +1,278 @@
+package ai.sol.hermes;
+
+import android.content.Context;
+import android.content.res.AssetManager;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
+
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+/**
+ * Automates downloading, unpacking, and configuring the in-app PRoot rootfs environment.
+ */
+public class RootfsInstaller {
+    private static final String TAG = "RootfsInstaller";
+
+    public static class Profile {
+        public final String id;
+        public final String name;
+        public final String description;
+        public final String downloadUrl;
+        public final String approxSize;
+
+        public Profile(String id, String name, String description, String downloadUrl, String approxSize) {
+            this.id = id;
+            this.name = name;
+            this.description = description;
+            this.downloadUrl = downloadUrl;
+            this.approxSize = approxSize;
+        }
+    }
+
+    public static final Profile PROFILE_UBUNTU_NOBLE = new Profile(
+            "ubuntu_noble",
+            "Hermes Standard (Ubuntu 24.04 Noble)",
+            "Official Ubuntu 24.04 LTS (Noble) with Python 3.14 + Node 26 + tools",
+            "https://cdimage.ubuntu.com/ubuntu-base/releases/noble/release/ubuntu-base-24.04.3-base-arm64.tar.gz",
+            "~28.5 MB download (~85 MB extracted)"
+    );
+
+    public static final Profile PROFILE_ALPINE_LITE = new Profile(
+            "alpine_lite",
+            "Hermes Lite (Alpine Linux 3.20)",
+            "Ultra-compact lightweight base rootfs for minimal storage footprint",
+            "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
+            "~3.9 MB download (~12 MB extracted)"
+    );
+
+    public interface InstallCallback {
+        void onProgress(int percent, String stepTitle, String details);
+        void onLog(String logMessage);
+        void onSuccess();
+        void onError(String message, Throwable error);
+    }
+
+    private final Context context;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private volatile boolean isCancelled = false;
+
+    public RootfsInstaller(Context context) {
+        this.context = context.getApplicationContext();
+    }
+
+    public void startInstall(Profile profile, InstallCallback callback) {
+        isCancelled = false;
+        executor.execute(() -> {
+            try {
+                notifyLog(callback, "=== Starting Hermes Agent Subsystem Setup ===");
+                notifyLog(callback, "Target Profile: " + profile.name);
+                notifyLog(callback, "Source URL: " + profile.downloadUrl);
+
+                File filesDir = context.getFilesDir();
+                File rootfsDir = InstallationManager.getRootfsDir(context);
+                File workspaceDir = InstallationManager.getWorkspaceDir(context);
+                File archiveFile = new File(filesDir, "rootfs_download.tar.gz");
+
+                // Step 1: Ensure PRoot binary is available
+                notifyProgress(callback, 5, "Preparing Binaries", "Locating QROOT/PRoot launcher...");
+                String prootPath = InstallationManager.findOrExtractProotBinary(context);
+                notifyLog(callback, "[+] PRoot binary ready at: " + prootPath);
+
+                // Step 2: Download RootFS tarball
+                notifyProgress(callback, 10, "Downloading Linux RootFS", "Connecting to CDN (" + profile.approxSize + ")...");
+                downloadFile(profile.downloadUrl, archiveFile, (percent, downloadedBytes, totalBytes) -> {
+                    String mbInfo = String.format("%.1f MB / %.1f MB", downloadedBytes / (1024.0 * 1024.0), totalBytes / (1024.0 * 1024.0));
+                    int overallPercent = 10 + (int) (percent * 0.50); // 10% to 60%
+                    notifyProgress(callback, overallPercent, "Downloading Linux RootFS", mbInfo + " (" + percent + "%)");
+                }, callback);
+
+                if (isCancelled) return;
+                notifyLog(callback, "[+] Download complete: " + (archiveFile.length() / (1024 * 1024)) + " MB");
+
+                // Step 3: Extract RootFS
+                notifyProgress(callback, 65, "Extracting Linux Filesystem", "Unpacking system packages into internal storage...");
+                notifyLog(callback, "[*] Extracting " + archiveFile.getName() + " into " + rootfsDir.getAbsolutePath() + "...");
+
+                int count = TarExtractor.extractTarGz(archiveFile, rootfsDir, (extractedCount, currentEntry) -> {
+                    if (extractedCount % 500 == 0) {
+                        notifyLog(callback, "Extracting: " + currentEntry + " (#" + extractedCount + ")");
+                    }
+                });
+
+                notifyLog(callback, "[+] Extracted " + count + " files successfully.");
+                archiveFile.delete(); // Delete archive to free up space
+
+                // Step 4: Configure internal network & environment
+                notifyProgress(callback, 85, "Configuring Linux Subsystem", "Configuring DNS, hosts, and workspace...");
+                setupResolvConf(rootfsDir);
+                setupHosts(rootfsDir);
+                setupWorkspace(rootfsDir, workspaceDir);
+
+                // Step 5: Install boot files
+                notifyProgress(callback, 92, "Installing Boot Chain", "Injecting Hermes Agent startup scripts...");
+                injectBootFiles(rootfsDir, callback);
+
+                // Step 6: Mark Installed
+                InstallationManager.markInstalled(context, profile.id);
+                notifyProgress(callback, 100, "Setup Complete", "Hermes Agent Linux subsystem ready!");
+                notifyLog(callback, "=== Subsystem Setup Finished Successfully ===");
+
+                mainHandler.post(callback::onSuccess);
+
+            } catch (Throwable t) {
+                Log.e(TAG, "Installation failed: " + t.getMessage(), t);
+                notifyLog(callback, "[-] ERROR: " + t.getMessage());
+                mainHandler.post(() -> callback.onError(t.getMessage(), t));
+            }
+        });
+    }
+
+    private interface DownloadProgressListener {
+        void onProgress(int percent, long downloadedBytes, long totalBytes);
+    }
+
+    private void downloadFile(String urlStr, File destFile, DownloadProgressListener listener, InstallCallback callback) throws Exception {
+        URL url = new URL(urlStr);
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setConnectTimeout(30000);
+        conn.setReadTimeout(60000);
+        conn.setInstanceFollowRedirects(true);
+        conn.setRequestProperty("User-Agent", "HermesAgent-Android/1.1");
+        conn.connect();
+
+        int responseCode = conn.getResponseCode();
+        // Handle manual redirect if needed
+        if (responseCode == HttpURLConnection.HTTP_MOVED_PERM || responseCode == HttpURLConnection.HTTP_MOVED_TEMP) {
+            String newUrl = conn.getHeaderField("Location");
+            conn.disconnect();
+            downloadFile(newUrl, destFile, listener, callback);
+            return;
+        }
+
+        if (responseCode != HttpURLConnection.HTTP_OK) {
+            throw new Exception("HTTP error code: " + responseCode + " while downloading " + urlStr);
+        }
+
+        long totalLength = conn.getContentLengthLong();
+        notifyLog(callback, "[*] Connected to CDN. Total download size: " + (totalLength / (1024 * 1024)) + " MB");
+
+        try (InputStream in = conn.getInputStream();
+             FileOutputStream out = new FileOutputStream(destFile)) {
+
+            byte[] buffer = new byte[32768];
+            long totalRead = 0;
+            int bytesRead;
+            long lastNotify = System.currentTimeMillis();
+
+            while ((bytesRead = in.read(buffer)) != -1) {
+                if (isCancelled) {
+                    destFile.delete();
+                    return;
+                }
+                out.write(buffer, 0, bytesRead);
+                totalRead += bytesRead;
+
+                long now = System.currentTimeMillis();
+                if (now - lastNotify > 300) {
+                    lastNotify = now;
+                    int percent = totalLength > 0 ? (int) ((totalRead * 100) / totalLength) : 0;
+                    listener.onProgress(percent, totalRead, totalLength);
+                }
+            }
+        } finally {
+            conn.disconnect();
+        }
+    }
+
+    private void setupResolvConf(File rootfsDir) {
+        try {
+            File etc = new File(rootfsDir, "etc");
+            if (!etc.exists()) etc.mkdirs();
+            File resolvConf = new File(etc, "resolv.conf");
+            if (resolvConf.exists()) resolvConf.delete();
+            try (FileOutputStream fos = new FileOutputStream(resolvConf)) {
+                String conf = "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 8.8.4.4\n";
+                fos.write(conf.getBytes());
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to write resolv.conf: " + e.getMessage());
+        }
+    }
+
+    private void setupHosts(File rootfsDir) {
+        try {
+            File hosts = new File(rootfsDir, "etc/hosts");
+            if (!hosts.exists()) {
+                try (FileOutputStream fos = new FileOutputStream(hosts)) {
+                    String conf = "127.0.0.1 localhost\n127.0.0.2 localhost\n::1 localhost\n";
+                    fos.write(conf.getBytes());
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Failed to write hosts: " + e.getMessage());
+        }
+    }
+
+    private void setupWorkspace(File rootfsDir, File workspaceDir) {
+        try {
+            File rootDir = new File(rootfsDir, "root");
+            if (!rootDir.exists()) rootDir.mkdirs();
+            File internalWorkspace = new File(rootDir, "workspace");
+            if (!internalWorkspace.exists()) internalWorkspace.mkdirs();
+        } catch (Exception ignored) {}
+    }
+
+    private void injectBootFiles(File rootfsDir, InstallCallback callback) {
+        try {
+            AssetManager am = context.getAssets();
+            File usrLocalBin = new File(rootfsDir, "usr/local/bin");
+            if (!usrLocalBin.exists()) usrLocalBin.mkdirs();
+
+            // Copy usr_local_bin files
+            copyAssetFile(am, "boot_files/usr_local_bin/hermes", new File(usrLocalBin, "hermes"), true);
+            copyAssetFile(am, "boot_files/usr_local_bin/hermes-agent", new File(usrLocalBin, "hermes-agent"), true);
+            copyAssetFile(am, "boot_files/usr_local_bin/hermes-android-doctor", new File(usrLocalBin, "hermes-android-doctor"), true);
+
+            // Copy profiles
+            File rootDir = new File(rootfsDir, "root");
+            if (!rootDir.exists()) rootDir.mkdirs();
+            copyAssetFile(am, "boot_files/profiles/.bashrc", new File(rootDir, ".bashrc"), false);
+            copyAssetFile(am, "boot_files/profiles/.profile", new File(rootDir, ".profile"), false);
+
+            notifyLog(callback, "[+] Injected Hermes launcher and profile scripts into /usr/local/bin and /root/");
+        } catch (Exception e) {
+            notifyLog(callback, "[!] Boot files injection notice: " + e.getMessage());
+        }
+    }
+
+    private void copyAssetFile(AssetManager am, String assetPath, File destFile, boolean makeExecutable) {
+        try (InputStream in = am.open(assetPath);
+             FileOutputStream out = new FileOutputStream(destFile)) {
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            if (makeExecutable) {
+                InstallationManager.setExecutable(destFile);
+            }
+        } catch (Exception ignored) {}
+    }
+
+    private void notifyProgress(InstallCallback callback, int percent, String title, String details) {
+        mainHandler.post(() -> callback.onProgress(percent, title, details));
+    }
+
+    private void notifyLog(InstallCallback callback, String msg) {
+        Log.i(TAG, msg);
+        mainHandler.post(() -> callback.onLog(msg));
+    }
+}

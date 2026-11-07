@@ -1,13 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/black">
 
+    <!-- 1. Fullscreen WebView Layer -->
     <androidx.swiperefreshlayout.widget.SwipeRefreshLayout
         android:id="@+id/swipeRefresh"
         android:layout_width="match_parent"
-        android:layout_height="match_parent">
+        android:layout_height="match_parent"
+        android:visibility="gone">
 
         <WebView
             android:id="@+id/webView"
@@ -16,7 +19,180 @@
 
     </androidx.swiperefreshlayout.widget.SwipeRefreshLayout>
 
-    <!-- Fallback / Initial connection overlay -->
+    <!-- 2. First Launch Setup / Installer Screen -->
+    <ScrollView
+        android:id="@+id/installerLayout"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:visibility="gone">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:padding="24dp">
+
+            <ImageView
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_marginTop="16dp"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/ic_launcher" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="12dp"
+                android:text="Hermes Agent"
+                android:textColor="@color/white"
+                android:textSize="24sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="Standalone PRoot / QROOT Linux Subsystem"
+                android:textColor="@color/teal_hermes"
+                android:textSize="14sp" />
+
+            <!-- Profile Selection Card -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="24dp"
+                app:cardBackgroundColor="@color/dark_gray"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="4dp">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:padding="16dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="SELECT RUNTIME PROFILE"
+                        android:textColor="@color/text_muted"
+                        android:textSize="12sp"
+                        android:textStyle="bold" />
+
+                    <RadioGroup
+                        android:id="@+id/rgProfiles"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp">
+
+                        <RadioButton
+                            android:id="@+id/rbUbuntuNoble"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:checked="true"
+                            android:text="Hermes Standard (Ubuntu 24.04 Noble)\nPython 3.14 + Node 26 + full Linux CLI (~28 MB dl)"
+                            android:textColor="@color/white"
+                            android:textSize="13sp" />
+
+                        <RadioButton
+                            android:id="@+id/rbAlpineLite"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Hermes Lite (Alpine Linux 3.20)\nUltra-compact minimal rootfs (~4 MB dl)"
+                            android:textColor="@color/white"
+                            android:textSize="13sp" />
+
+                    </RadioGroup>
+
+                    <TextView
+                        android:id="@+id/txtDetectedArch"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:text="Target: Linux arm64-v8a | Inbuilt libproot.so"
+                        android:textColor="@color/teal_hermes"
+                        android:textSize="12sp" />
+
+                </LinearLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Install Progress View (Hidden until Install clicked) -->
+            <LinearLayout
+                android:id="@+id/progressContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:orientation="vertical"
+                android:visibility="gone">
+
+                <ProgressBar
+                    android:id="@+id/installProgressBar"
+                    style="@style/Widget.AppCompat.ProgressBar.Horizontal"
+                    android:layout_width="match_parent"
+                    android:layout_height="12dp"
+                    android:indeterminate="false"
+                    android:max="100"
+                    android:progress="0"
+                    android:progressTint="@color/teal_hermes" />
+
+                <TextView
+                    android:id="@+id/txtInstallStepTitle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:text="Downloading RootFS..."
+                    android:textColor="@color/white"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/txtInstallStepDetails"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="4dp"
+                    android:text="0% (0.0 MB / 28.5 MB)"
+                    android:textColor="@color/text_muted"
+                    android:textSize="12sp" />
+
+                <!-- Expandable Console Log -->
+                <ScrollView
+                    android:id="@+id/consoleScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="140dp"
+                    android:layout_marginTop="12dp"
+                    android:background="#FF121212"
+                    android:padding="8dp">
+
+                    <TextView
+                        android:id="@+id/txtConsoleLog"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:fontFamily="monospace"
+                        android:text="[Installer initialized]\n"
+                        android:textColor="#FF00FF66"
+                        android:textSize="11sp" />
+                </ScrollView>
+
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/btnStartInstall"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="24dp"
+                android:backgroundTint="@color/teal_hermes"
+                android:text="Install &amp; Launch Hermes Agent"
+                android:textColor="@color/black"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+        </LinearLayout>
+    </ScrollView>
+
+    <!-- 3. Booting / Connecting Screen -->
     <LinearLayout
         android:id="@+id/loadingLayout"
         android:layout_width="match_parent"
@@ -27,28 +203,64 @@
         android:visibility="gone">
 
         <ProgressBar
-            android:layout_width="48dp"
-            android:layout_height="48dp"
+            android:layout_width="54dp"
+            android:layout_height="54dp"
             android:indeterminateTint="@color/teal_hermes" />
 
         <TextView
             android:id="@+id/txtStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="@string/loading_msg"
+            android:layout_marginTop="18dp"
+            android:text="Starting PRoot Linux Subsystem..."
             android:textAlignment="center"
             android:textColor="@color/white"
-            android:textSize="14sp" />
+            android:textSize="15sp" />
 
-        <Button
-            android:id="@+id/btnRetry"
+        <TextView
+            android:id="@+id/txtSubStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="20dp"
-            android:backgroundTint="@color/teal_hermes"
-            android:text="@string/retry_btn"
-            android:textColor="@color/black" />
+            android:layout_marginTop="6dp"
+            android:text="Waiting for Hermes Dashboard on 127.0.0.2:39067"
+            android:textAlignment="center"
+            android:textColor="@color/text_muted"
+            android:textSize="12sp" />
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnRetry"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:backgroundTint="@color/dark_gray"
+                android:text="Retry"
+                android:textColor="@color/white" />
+
+            <Button
+                android:id="@+id/btnViewLogs"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:backgroundTint="@color/dark_gray"
+                android:text="View Logs"
+                android:textColor="@color/teal_hermes" />
+
+            <Button
+                android:id="@+id/btnResetSubsystem"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="12dp"
+                android:backgroundTint="#FF441111"
+                android:text="Reset"
+                android:textColor="@color/white" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
 </FrameLayout>
