@@ -197,8 +197,63 @@ Android 10+ (`targetSdk >= 29`) enforces W^X (noexec) on the private app directo
 - **Full Capability Bridge Coverage**:
   - Implemented `/file/list`, `/file/share`, `/file/save`, `/workspace/backup`, and diagnostics in `CapabilityServer.java` for full parity with `skills/android-device/android_device.py`.
   - Exported `HERMES_ANDROID_CAPABILITY_TOKEN=hermes_local_bridge_token` to eliminate unauthorized credential exceptions.
-- **Android Manifest & Permissions**: Added `FileProvider`, `ACCESS_WIFI_STATE`, `RECEIVE_BOOT_COMPLETED`, and `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
 - **Release Version**: Upgraded `versionCode 31007`, `versionName "3.10.7"`, and release tag `v3.10.7-apk`.
+
+---
+
+## 8. Deep Audit: The 11 MB vs 36 MB+ Mystery, Native Split APK Analysis & Symlink Resolution
+
+### A. The 11 MB vs 36 MB+ Mystery (Without Opening the App)
+
+When `ai.sol.hermes` (v3.10.7) is installed from Google Play and never opened, App Info reports ~36 MB+ despite `base.apk` being only ~11 MB. This occurs due to three Android system mechanisms:
+
+| Mechanism | Description | Disk Impact |
+|---|---|---|
+| **Android App Bundle (Split APKs)** | Google Play splits apps into `base.apk` (~11 MB) and architecture splits (e.g., `split_config.arm64_v8a.apk` ~10 MB). APK extractors without split support only copy `base.apk`. | +10 MB (downloaded split) |
+| **`extractNativeLibs="true"` / `useLegacyPackaging`** | On installation, Android PackageManager extracts compressed `.so` files from the split APK into `/data/app/.../lib/arm64/` with executable (`+x`) permissions. | +9.5 MB (uncompressed binaries) |
+| **ART `dex2oat` Background AOT Compilation** | Android's `BackgroundDexoptService` runs during idle maintenance, using `assets/dexopt/baseline.prof` to compile DEX bytecode into native machine code (`.odex`, `.vdex`, `.art`) in `/data/app/.../oat/arm64/`. | +12–18 MB (AOT cache) |
+| **Total Disk Footprint Before Launch** | `base.apk` + `split_config` + extracted `.so` + `.odex` / `.vdex` | **~36 MB – 48 MB** |
+
+---
+
+### B. Expected Native Binaries & Library Mapping
+
+`UbuntuManager` and `PRootRunner` require the following 64-bit ARM binaries in `applicationInfo.nativeLibraryDir` (`jniLibs/arm64-v8a/`):
+
+| Binary / Library | Packaging Name | Size | Purpose & Role |
+|---|---|---|---|
+| **PRoot Engine** | `libproot.so` | 1.02 MB | User-space chroot/mount engine, syscall interception (`ptrace`/`seccomp`) |
+| **QROOT Alias** | `libqroot.so` | 1.02 MB | Alias/fallback executable for PRoot engine |
+| **BusyBox Shell** | `libbusybox.so` | 1.5 MB | Multi-call binary (`sh`, `tar`, `gzip`, `cp`, `chmod`, `ln`, `mkdir`) |
+| **7-Zip Archiver** | `lib7za.so` / `lib7z.so` | 3.0 MB | Static 64-bit ARM 7-Zip (`7zzs`) for native LZMA/LZMA2 extraction with POSIX symlinks |
+| **Bundled Assets Fallback** | `assets/bin/*` | 5.4 MB | Unpacked to `<filesDir>/bin/` if nativeLibraryDir extraction fails |
+
+---
+
+### C. Root Cause of Previous Runtime Failure & Missing Elements
+
+1. **What was in Play Store `base.apk` vs our APK:**
+   - Play Store `base.apk` included Google Play Billing, Google Mobile Ads (AdMob), Firebase Analytics, and tracking telemetry (~2.5 MB of DEX and resources).
+   - Our APK intentionally excluded all ad and tracking bloatware.
+   - However, because `base.apk` relied on `split_config.arm64_v8a.apk` for native archivers, our initial standalone build lacked the native 7-Zip executable.
+
+2. **The Exact Runtime Failure Point:**
+   - Previous implementation used Java Apache Commons Compress `SevenZFile` in `ArchiveExtractor.extract7z`.
+   - `SevenZFile` does **not** restore POSIX symbolic links (`entry.isSymbolicLink()` was unhandled), extracting symlinks as regular plain text files containing the destination path (e.g., `/bin/sh` containing text `"bash"`, or `/lib64/ld-linux-aarch64.so.1` containing `"ld-2.39.so"`).
+   - When `PRootRunner` subsequently launched:
+     ```bash
+     libproot.so -r rootfs -0 /bin/bash -lc "cd /root/workspace && exec hermes dashboard ..."
+     ```
+     The dynamic linker or shell failed immediately with `Exec format error` or `No such file or directory`.
+
+3. **The Solution Implemented:**
+   - Bundled official statically linked 64-bit ARM 7-Zip (`7zzs`) as `lib7za.so` and `lib7z.so` (3.0 MB) in `jniLibs/arm64-v8a/` and `assets/bin/7za-arm64`.
+   - Updated `ArchiveExtractor.java` to invoke `lib7za.so x -y -aoa -snl -snh <archive> -o<rootfs>`:
+     - `-snl`: Restores true POSIX symbolic links.
+     - `-snh`: Restores hard links.
+     - `-aoa`: Overwrites without prompt.
+   - Added executable bit verification (`InstallationManager.setExecutable`) for `bin/bash` and `bin/sh` prior to PRoot launch in `PRootRunner.java`.
+
 
 
 
