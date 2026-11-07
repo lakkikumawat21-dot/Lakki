@@ -1,9 +1,7 @@
 package ai.sol.hermes;
 
-import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
@@ -21,8 +19,6 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
-import java.io.ByteArrayOutputStream;
-import java.io.File;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
@@ -36,6 +32,7 @@ import java.util.concurrent.Executors;
 /**
  * 100% Ad-Free, zero-tracker Local Android Capability REST Server.
  * Serves port 43097 for Hermes Agent's android_device.py capability integration.
+ * Strictly executes all socket binding and networking off the UI Main Thread.
  */
 public class CapabilityServer {
     private static final String TAG = "HermesCapabilityServer";
@@ -45,7 +42,7 @@ public class CapabilityServer {
     private final Context context;
     private final int port;
     private ServerSocket serverSocket;
-    private boolean isRunning = false;
+    private volatile boolean isRunning = false;
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
 
@@ -56,17 +53,21 @@ public class CapabilityServer {
     }
 
     private void initNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                    CHANNEL_ID,
-                    "Hermes Agent Alerts",
-                    NotificationManager.IMPORTANCE_DEFAULT
-            );
-            channel.setDescription("Notifications and alarms dispatched by Hermes Agent");
-            NotificationManager manager = context.getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationChannel channel = new NotificationChannel(
+                        CHANNEL_ID,
+                        "Hermes Agent Alerts",
+                        NotificationManager.IMPORTANCE_DEFAULT
+                );
+                channel.setDescription("Notifications and alarms dispatched by Hermes Agent");
+                NotificationManager manager = context.getSystemService(NotificationManager.class);
+                if (manager != null) {
+                    manager.createNotificationChannel(channel);
+                }
             }
+        } catch (Throwable t) {
+            Log.w(TAG, "Notification channel init skipped or not supported: " + t.getMessage());
         }
     }
 
@@ -75,16 +76,18 @@ public class CapabilityServer {
         isRunning = true;
         executor.execute(() -> {
             try {
-                // Bind strictly to loopback (127.0.0.1) for local device security
-                serverSocket = new ServerSocket(port, 50, InetAddress.getByName("127.0.0.1"));
+                // Strictly bind loopback (127.0.0.1) off the main thread
+                InetAddress loopback = InetAddress.getByName("127.0.0.1");
+                serverSocket = new ServerSocket(port, 50, loopback);
                 Log.i(TAG, "Capability REST server listening on 127.0.0.1:" + port);
-                while (isRunning && !serverSocket.isClosed()) {
+                while (isRunning && serverSocket != null && !serverSocket.isClosed()) {
                     Socket socket = serverSocket.accept();
+                    socket.setSoTimeout(10000); // 10s socket timeout
                     executor.execute(() -> handleClient(socket));
                 }
             } catch (Exception e) {
                 if (isRunning) {
-                    Log.e(TAG, "Server error: " + e.getMessage(), e);
+                    Log.e(TAG, "Server listener error: " + e.getMessage(), e);
                 }
             }
         });
@@ -213,7 +216,11 @@ public class CapabilityServer {
                 case "/toast":
                     if (reqBody != null) {
                         String message = reqBody.optString("message", "");
-                        mainHandler.post(() -> Toast.makeText(context, message, Toast.LENGTH_SHORT).show());
+                        mainHandler.post(() -> {
+                            try {
+                                Toast.makeText(context, message, Toast.LENGTH_SHORT).show();
+                            } catch (Exception ignored) {}
+                        });
                         res.put("status", "ok");
                     } else {
                         res.put("status", "error");
@@ -237,24 +244,36 @@ public class CapabilityServer {
                         if (reqBody != null) {
                             String text = reqBody.optString("text", "");
                             mainHandler.post(() -> {
-                                ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                                if (cm != null) {
-                                    cm.setPrimaryClip(ClipData.newPlainText("Hermes Agent", text));
+                                try {
+                                    ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+                                    if (cm != null) {
+                                        cm.setPrimaryClip(ClipData.newPlainText("Hermes Agent", text));
+                                    }
+                                } catch (Exception e) {
+                                    Log.w(TAG, "Clipboard write error: " + e.getMessage());
                                 }
                             });
                             res.put("status", "ok");
                         }
                     } else {
-                        // GET clipboard
-                        ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
-                        String text = "";
-                        if (cm != null && cm.hasPrimaryClip()) {
-                            ClipData.Item item = cm.getPrimaryClip().getItemAt(0);
-                            if (item != null && item.getText() != null) {
-                                text = item.getText().toString();
+                        // GET clipboard with protection against Android 10+ background restrictions
+                        try {
+                            ClipboardManager cm = (ClipboardManager) context.getSystemService(Context.CLIPBOARD_SERVICE);
+                            String text = "";
+                            if (cm != null && cm.hasPrimaryClip()) {
+                                ClipData.Item item = cm.getPrimaryClip().getItemAt(0);
+                                if (item != null && item.getText() != null) {
+                                    text = item.getText().toString();
+                                }
                             }
+                            res.put("text", text);
+                        } catch (SecurityException se) {
+                            Log.w(TAG, "Clipboard read restricted by Android security: " + se.getMessage());
+                            res.put("text", "");
+                            res.put("warning", "Clipboard access requires app focus on Android 10+");
+                        } catch (Exception e) {
+                            res.put("text", "");
                         }
-                        res.put("text", text);
                     }
                     break;
 
@@ -262,10 +281,15 @@ public class CapabilityServer {
                     if (reqBody != null) {
                         String url = reqBody.optString("url", "");
                         if (!url.isEmpty()) {
-                            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                            context.startActivity(intent);
-                            res.put("status", "ok");
+                            try {
+                                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+                                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                                context.startActivity(intent);
+                                res.put("status", "ok");
+                            } catch (Exception e) {
+                                res.put("status", "error");
+                                res.put("error", e.getMessage());
+                            }
                         }
                     }
                     break;
@@ -299,18 +323,24 @@ public class CapabilityServer {
     }
 
     private void triggerNotification(String title, String message) {
-        NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-        if (manager == null) return;
+        try {
+            NotificationManager manager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager == null) return;
 
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(title)
-                .setContentText(message)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
-                .setPriority(NotificationCompat.PRIORITY_DEFAULT)
-                .setAutoCancel(true);
+            NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
+                    .setSmallIcon(android.R.drawable.ic_dialog_info)
+                    .setContentTitle(title)
+                    .setContentText(message)
+                    .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                    .setPriority(NotificationCompat.PRIORITY_DEFAULT)
+                    .setAutoCancel(true);
 
-        manager.notify((int) System.currentTimeMillis(), builder.build());
+            manager.notify((int) System.currentTimeMillis(), builder.build());
+        } catch (SecurityException se) {
+            Log.w(TAG, "Notification permission denied (POST_NOTIFICATIONS): " + se.getMessage());
+        } catch (Throwable t) {
+            Log.e(TAG, "Failed to trigger notification: " + t.getMessage());
+        }
     }
 
     private void sendResponse(OutputStream out, int code, String msg, String contentType, String body) throws Exception {
