@@ -31,6 +31,16 @@
         </activity>
 
         <service
+            android:name=".AgentService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Hermes Agent Local Capability Bridge and PRoot Engine" />
+        </service>
+
+        <service
             android:name=".HermesService"
             android:enabled="true"
             android:exported="false"

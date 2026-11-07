@@ -88,11 +88,20 @@
                         android:layout_marginTop="12dp">
 
                         <RadioButton
-                            android:id="@+id/rbUbuntuNoble"
+                            android:id="@+id/rbArchUbuntu"
                             android:layout_width="match_parent"
                             android:layout_height="wrap_content"
                             android:checked="true"
-                            android:text="Hermes Standard (Ubuntu 24.04 Noble)\nPython 3.14 + Node 26 + full Linux CLI (~28 MB dl)"
+                            android:text="Hermes Standard (arch-ubuntu.7z — Recommended)\nOfficial release with Python 3.14 + Node + tools (~22 MB dl)"
+                            android:textColor="@color/white"
+                            android:textSize="13sp" />
+
+                        <RadioButton
+                            android:id="@+id/rbUbuntuNoble"
+                            android:layout_width="match_parent"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="8dp"
+                            android:text="Ubuntu 24.04 Noble LTS (Official Cloud RootFS)\nBase Noble rootfs directly from Ubuntu CDN (~28 MB dl)"
                             android:textColor="@color/white"
                             android:textSize="13sp" />
 

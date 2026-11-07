@@ -11,11 +11,14 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * Automates downloading, unpacking, and configuring the in-app PRoot rootfs environment.
+ * Automates downloading (with multi-mirror failover), unpacking (.7z & .tar.gz),
+ * and configuring the internal PRoot subsystem.
  */
 public class RootfsInstaller {
     private static final String TAG = "RootfsInstaller";
@@ -26,22 +29,34 @@ public class RootfsInstaller {
         public final String description;
         public final String downloadUrl;
         public final String approxSize;
+        public final boolean is7z;
 
-        public Profile(String id, String name, String description, String downloadUrl, String approxSize) {
+        public Profile(String id, String name, String description, String downloadUrl, String approxSize, boolean is7z) {
             this.id = id;
             this.name = name;
             this.description = description;
             this.downloadUrl = downloadUrl;
             this.approxSize = approxSize;
+            this.is7z = is7z;
         }
     }
 
-    public static final Profile PROFILE_UBUNTU_NOBLE = new Profile(
+    public static final Profile PROFILE_ARCH_UBUNTU_7Z = new Profile(
+            "arch_ubuntu_7z",
+            "Hermes Standard (Ubuntu arch-ubuntu.7z)",
+            "Official standalone Xermes release with Python 3.14 & Node runtime",
+            UbuntuManager.PRIMARY_RELEASE_URL,
+            "~22 MB download (~85 MB extracted)",
+            true
+    );
+
+    public static final Profile PROFILE_UBUNTU_NOBLE_TAR = new Profile(
             "ubuntu_noble",
-            "Hermes Standard (Ubuntu 24.04 Noble)",
-            "Official Ubuntu 24.04 LTS (Noble) with Python 3.14 + Node 26 + tools",
-            "https://cdimage.ubuntu.com/ubuntu-base/releases/noble/release/ubuntu-base-24.04.3-base-arm64.tar.gz",
-            "~28.5 MB download (~85 MB extracted)"
+            "Hermes Official Ubuntu 24.04 Noble",
+            "Direct Ubuntu 24.04 LTS (Noble Numbat) official cloud rootfs",
+            UbuntuManager.UBUNTU_CLOUD_URL,
+            "~28.5 MB download (~85 MB extracted)",
+            false
     );
 
     public static final Profile PROFILE_ALPINE_LITE = new Profile(
@@ -49,7 +64,8 @@ public class RootfsInstaller {
             "Hermes Lite (Alpine Linux 3.20)",
             "Ultra-compact lightweight base rootfs for minimal storage footprint",
             "https://dl-cdn.alpinelinux.org/alpine/v3.20/releases/aarch64/alpine-minirootfs-3.20.3-aarch64.tar.gz",
-            "~3.9 MB download (~12 MB extracted)"
+            "~3.9 MB download (~12 MB extracted)",
+            false
     );
 
     public interface InstallCallback {
@@ -74,54 +90,54 @@ public class RootfsInstaller {
             try {
                 notifyLog(callback, "=== Starting Hermes Agent Subsystem Setup ===");
                 notifyLog(callback, "Target Profile: " + profile.name);
-                notifyLog(callback, "Source URL: " + profile.downloadUrl);
+                notifyLog(callback, "Base URL: " + profile.downloadUrl);
 
                 File filesDir = context.getFilesDir();
                 File rootfsDir = InstallationManager.getRootfsDir(context);
                 File workspaceDir = InstallationManager.getWorkspaceDir(context);
-                File archiveFile = new File(filesDir, "rootfs_download.tar.gz");
 
-                // Step 1: Ensure PRoot binary is available
-                notifyProgress(callback, 5, "Preparing Binaries", "Locating QROOT/PRoot launcher...");
+                String archiveName = profile.is7z ? "rootfs_download.7z" : "rootfs_download.tar.gz";
+                File archiveFile = new File(filesDir, archiveName);
+
+                // Step 1: Ensure native binaries are present
+                notifyProgress(callback, 5, "Preparing Native Binaries", "Verifying libproot.so and libbusybox.so...");
                 String prootPath = InstallationManager.findOrExtractProotBinary(context);
                 notifyLog(callback, "[+] PRoot binary ready at: " + prootPath);
 
-                // Step 2: Download RootFS tarball
-                notifyProgress(callback, 10, "Downloading Linux RootFS", "Connecting to CDN (" + profile.approxSize + ")...");
-                downloadFile(profile.downloadUrl, archiveFile, (percent, downloadedBytes, totalBytes) -> {
-                    String mbInfo = String.format("%.1f MB / %.1f MB", downloadedBytes / (1024.0 * 1024.0), totalBytes / (1024.0 * 1024.0));
-                    int overallPercent = 10 + (int) (percent * 0.50); // 10% to 60%
-                    notifyProgress(callback, overallPercent, "Downloading Linux RootFS", mbInfo + " (" + percent + "%)");
-                }, callback);
+                // Step 2: Download with mirror failover
+                notifyProgress(callback, 10, "Downloading RootFS", "Connecting to primary/mirror CDNs (" + profile.approxSize + ")...");
+                downloadWithFailover(profile.downloadUrl, archiveFile, callback);
 
                 if (isCancelled) return;
                 notifyLog(callback, "[+] Download complete: " + (archiveFile.length() / (1024 * 1024)) + " MB");
 
-                // Step 3: Extract RootFS
-                notifyProgress(callback, 65, "Extracting Linux Filesystem", "Unpacking system packages into internal storage...");
+                // Step 3: Extract archive (.7z or .tar.gz)
+                notifyProgress(callback, 65, "Extracting Linux Filesystem", "Restoring system tree and symbolic links...");
                 notifyLog(callback, "[*] Extracting " + archiveFile.getName() + " into " + rootfsDir.getAbsolutePath() + "...");
 
-                int count = TarExtractor.extractTarGz(archiveFile, rootfsDir, (extractedCount, currentEntry) -> {
+                int count = ArchiveExtractor.extract(archiveFile, rootfsDir, (extractedCount, currentEntry) -> {
                     if (extractedCount % 500 == 0) {
                         notifyLog(callback, "Extracting: " + currentEntry + " (#" + extractedCount + ")");
                     }
                 });
 
-                notifyLog(callback, "[+] Extracted " + count + " files successfully.");
-                archiveFile.delete(); // Delete archive to free up space
+                notifyLog(callback, "[+] Extracted " + count + " entries successfully.");
+                archiveFile.delete(); // Free download space
 
-                // Step 4: Configure internal network & environment
-                notifyProgress(callback, 85, "Configuring Linux Subsystem", "Configuring DNS, hosts, and workspace...");
+                // Step 4: Network & Workspace configuration
+                notifyProgress(callback, 85, "Configuring Network Subsystem", "Configuring resolv.conf, hosts, and workspace...");
                 setupResolvConf(rootfsDir);
                 setupHosts(rootfsDir);
                 setupWorkspace(rootfsDir, workspaceDir);
 
-                // Step 5: Install boot files
-                notifyProgress(callback, 92, "Installing Boot Chain", "Injecting Hermes Agent startup scripts...");
+                // Step 5: Inject Boot Scripts & Profile
+                notifyProgress(callback, 92, "Installing Startup Chain", "Injecting hermes launcher and profile scripts...");
                 injectBootFiles(rootfsDir, callback);
 
-                // Step 6: Mark Installed
+                // Step 6: Mark Installed & Link Persistence
                 InstallationManager.markInstalled(context, profile.id);
+                new HermesDataManager(context).ensurePersistenceLinked();
+
                 notifyProgress(callback, 100, "Setup Complete", "Hermes Agent Linux subsystem ready!");
                 notifyLog(callback, "=== Subsystem Setup Finished Successfully ===");
 
@@ -133,6 +149,34 @@ public class RootfsInstaller {
                 mainHandler.post(() -> callback.onError(t.getMessage(), t));
             }
         });
+    }
+
+    private void downloadWithFailover(String primaryUrl, File destFile, InstallCallback callback) throws Exception {
+        UbuntuManager ubuntuManager = UbuntuManager.getInstance(context);
+        List<String> candidateUrls = ubuntuManager.getCandidateUrls(primaryUrl);
+        if (candidateUrls.isEmpty()) {
+            candidateUrls.add(primaryUrl);
+        }
+
+        Exception lastException = null;
+        for (int i = 0; i < candidateUrls.size(); i++) {
+            String candidate = candidateUrls.get(i);
+            try {
+                notifyLog(callback, "[*] Attempting download (" + (i + 1) + "/" + candidateUrls.size() + "): " + candidate);
+                downloadFile(candidate, destFile, (percent, downloadedBytes, totalBytes) -> {
+                    String mbInfo = String.format("%.1f MB / %.1f MB", downloadedBytes / (1024.0 * 1024.0), totalBytes / (1024.0 * 1024.0));
+                    int overallPercent = 10 + (int) (percent * 0.50); // 10% to 60%
+                    notifyProgress(callback, overallPercent, "Downloading RootFS", mbInfo + " (" + percent + "%)");
+                }, callback);
+                return; // Succeeded!
+            } catch (Exception e) {
+                lastException = e;
+                notifyLog(callback, "[!] Mirror attempt failed: " + e.getMessage() + " - trying next mirror...");
+                if (destFile.exists()) destFile.delete();
+            }
+        }
+
+        throw (lastException != null) ? lastException : new Exception("All download mirrors failed for: " + primaryUrl);
     }
 
     private interface DownloadProgressListener {
@@ -149,7 +193,6 @@ public class RootfsInstaller {
         conn.connect();
 
         int responseCode = conn.getResponseCode();
-        // Handle manual redirect if needed
         if (responseCode == HttpURLConnection.HTTP_MOVED_PERM || responseCode == HttpURLConnection.HTTP_MOVED_TEMP) {
             String newUrl = conn.getHeaderField("Location");
             conn.disconnect();
@@ -158,11 +201,11 @@ public class RootfsInstaller {
         }
 
         if (responseCode != HttpURLConnection.HTTP_OK) {
-            throw new Exception("HTTP error code: " + responseCode + " while downloading " + urlStr);
+            throw new Exception("HTTP " + responseCode + " for " + urlStr);
         }
 
         long totalLength = conn.getContentLengthLong();
-        notifyLog(callback, "[*] Connected to CDN. Total download size: " + (totalLength / (1024 * 1024)) + " MB");
+        notifyLog(callback, "[*] Connected. Content length: " + (totalLength / (1024 * 1024)) + " MB");
 
         try (InputStream in = conn.getInputStream();
              FileOutputStream out = new FileOutputStream(destFile)) {
@@ -181,7 +224,7 @@ public class RootfsInstaller {
                 totalRead += bytesRead;
 
                 long now = System.currentTimeMillis();
-                if (now - lastNotify > 300) {
+                if (now - lastNotify > 250) {
                     lastNotify = now;
                     int percent = totalLength > 0 ? (int) ((totalRead * 100) / totalLength) : 0;
                     listener.onProgress(percent, totalRead, totalLength);
@@ -236,20 +279,18 @@ public class RootfsInstaller {
             File usrLocalBin = new File(rootfsDir, "usr/local/bin");
             if (!usrLocalBin.exists()) usrLocalBin.mkdirs();
 
-            // Copy usr_local_bin files
             copyAssetFile(am, "boot_files/usr_local_bin/hermes", new File(usrLocalBin, "hermes"), true);
             copyAssetFile(am, "boot_files/usr_local_bin/hermes-agent", new File(usrLocalBin, "hermes-agent"), true);
             copyAssetFile(am, "boot_files/usr_local_bin/hermes-android-doctor", new File(usrLocalBin, "hermes-android-doctor"), true);
 
-            // Copy profiles
             File rootDir = new File(rootfsDir, "root");
             if (!rootDir.exists()) rootDir.mkdirs();
             copyAssetFile(am, "boot_files/profiles/.bashrc", new File(rootDir, ".bashrc"), false);
             copyAssetFile(am, "boot_files/profiles/.profile", new File(rootDir, ".profile"), false);
 
-            notifyLog(callback, "[+] Injected Hermes launcher and profile scripts into /usr/local/bin and /root/");
+            notifyLog(callback, "[+] Injected Hermes launcher and profile scripts.");
         } catch (Exception e) {
-            notifyLog(callback, "[!] Boot files injection notice: " + e.getMessage());
+            notifyLog(callback, "[!] Boot files notice: " + e.getMessage());
         }
     }
 

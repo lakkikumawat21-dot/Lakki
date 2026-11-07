@@ -44,12 +44,13 @@ import java.util.concurrent.Executors;
 /**
  * 100% Standalone Hermes Agent Android Subsystem & Dashboard.
  * Inbuilt QROOT/PRoot Linux installer, runtime manager, and WebView client.
+ * Reconstructed from com.xermes.xermes.MainActivity.
  */
 public class MainActivity extends AppCompatActivity {
     private static final String TAG = "HermesMainActivity";
 
-    public static final String PRIMARY_URL = "http://127.0.0.2:39067";
-    public static final String FALLBACK_URL = "http://127.0.0.1:39067";
+    public static final String PRIMARY_URL = "http://" + HermesAgentPaths.DASHBOARD_HOST + ":" + HermesAgentPaths.DASHBOARD_PORT;
+    public static final String FALLBACK_URL = "http://" + HermesAgentPaths.FALLBACK_HOST + ":" + HermesAgentPaths.DASHBOARD_PORT;
     private static final int PERMISSION_REQUEST_NOTIFICATIONS = 101;
     private static final int FILE_CHOOSER_REQUEST_CODE = 1001;
 
@@ -61,6 +62,7 @@ public class MainActivity extends AppCompatActivity {
 
     // Installer Elements
     private RadioGroup rgProfiles;
+    private RadioButton rbArchUbuntu;
     private RadioButton rbUbuntuNoble;
     private RadioButton rbAlpineLite;
     private TextView txtDetectedArch;
@@ -101,6 +103,7 @@ public class MainActivity extends AppCompatActivity {
         webView = findViewById(R.id.webView);
 
         rgProfiles = findViewById(R.id.rgProfiles);
+        rbArchUbuntu = findViewById(R.id.rbArchUbuntu);
         rbUbuntuNoble = findViewById(R.id.rbUbuntuNoble);
         rbAlpineLite = findViewById(R.id.rbAlpineLite);
         txtDetectedArch = findViewById(R.id.txtDetectedArch);
@@ -166,13 +169,19 @@ public class MainActivity extends AppCompatActivity {
 
     private void initiateInstallation() {
         btnStartInstall.setEnabled(false);
+        if (rbArchUbuntu != null) rbArchUbuntu.setEnabled(false);
         rbUbuntuNoble.setEnabled(false);
         rbAlpineLite.setEnabled(false);
         progressContainer.setVisibility(View.VISIBLE);
 
-        RootfsInstaller.Profile profile = rbAlpineLite.isChecked()
-                ? RootfsInstaller.PROFILE_ALPINE_LITE
-                : RootfsInstaller.PROFILE_UBUNTU_NOBLE;
+        RootfsInstaller.Profile profile;
+        if (rbArchUbuntu != null && rbArchUbuntu.isChecked()) {
+            profile = RootfsInstaller.PROFILE_ARCH_UBUNTU_7Z;
+        } else if (rbAlpineLite != null && rbAlpineLite.isChecked()) {
+            profile = RootfsInstaller.PROFILE_ALPINE_LITE;
+        } else {
+            profile = RootfsInstaller.PROFILE_UBUNTU_NOBLE_TAR;
+        }
 
         RootfsInstaller installer = new RootfsInstaller(this);
         installer.startInstall(profile, new RootfsInstaller.InstallCallback() {
@@ -198,6 +207,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onError(String message, Throwable error) {
                 btnStartInstall.setEnabled(true);
+                if (rbArchUbuntu != null) rbArchUbuntu.setEnabled(true);
                 rbUbuntuNoble.setEnabled(true);
                 rbAlpineLite.setEnabled(true);
                 new AlertDialog.Builder(MainActivity.this)
@@ -217,7 +227,7 @@ public class MainActivity extends AppCompatActivity {
         txtStatus.setText("Starting PRoot Linux Subsystem...");
         txtSubStatus.setText("Launching Hermes Agent engine & dashboard (127.0.0.2:39067)");
 
-        // Start Foreground Service (which runs PRootRunner and CapabilityServer)
+        // Start Foreground AgentService
         startEngineService();
 
         // Start polling for dashboard HTTP readiness
@@ -226,8 +236,8 @@ public class MainActivity extends AppCompatActivity {
 
     private void startEngineService() {
         try {
-            Intent serviceIntent = new Intent(this, HermesService.class);
-            serviceIntent.setAction("ACTION_START_ENGINE");
+            Intent serviceIntent = new Intent(this, AgentService.class);
+            serviceIntent.setAction("ACTION_START_BACKEND");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(serviceIntent);
             } else {
@@ -236,7 +246,7 @@ public class MainActivity extends AppCompatActivity {
         } catch (Throwable t) {
             Log.w(TAG, "Service start warning: " + t.getMessage(), t);
             // Fallback: Start in-process
-            PRootRunner.getInstance(this).start();
+            UbuntuManager.getInstance(this).startBackend();
         }
     }
 
@@ -263,7 +273,7 @@ public class MainActivity extends AppCompatActivity {
                     }
                 } catch (Exception ignored) {}
 
-                // Switch fallback between 127.0.0.2 and 127.0.0.1 on check
+                // Toggle host fallback between 127.0.0.2 and 127.0.0.1
                 checkUrl = (targetUrl.equals(PRIMARY_URL) ? FALLBACK_URL : PRIMARY_URL) + "/health";
 
                 final int currentAttempt = attempt;
@@ -321,6 +331,17 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 swipeRefresh.setRefreshing(false);
+
+                // Inject JS Synchronization and MutationObserver hooks matching reference app
+                String syncHook = "javascript:(function() {" +
+                        "  window.__HERMES_BRIDGE_READY = true;" +
+                        "  window.__HERMES_VERSION = '1.1.0';" +
+                        "  if (!window.__hermes_observer) {" +
+                        "    window.__hermes_observer = new MutationObserver(function() {});" +
+                        "    window.__hermes_observer.observe(document.body || document.documentElement, {childList: true, subtree: true});" +
+                        "  }" +
+                        "})();";
+                view.loadUrl(syncHook);
             }
 
             @Override
@@ -373,7 +394,7 @@ public class MainActivity extends AppCompatActivity {
                 .setTitle("Reset Linux Subsystem?")
                 .setMessage("This will delete the current rootfs environment and allow you to select a fresh profile. Workspace files will remain intact.")
                 .setPositiveButton("Reset", (dialog, which) -> {
-                    PRootRunner.getInstance(this).stop();
+                    UbuntuManager.getInstance(this).stopBackend();
                     InstallationManager.resetEnvironment(this);
                     showInstallerUI();
                 })
