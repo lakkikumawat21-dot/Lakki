@@ -10,8 +10,8 @@ android {
         applicationId "ai.sol.hermes"
         minSdk 24
         targetSdk 34
-        versionCode 2
-        versionName "1.1.0"
+        versionCode 31007
+        versionName "3.10.7"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
 

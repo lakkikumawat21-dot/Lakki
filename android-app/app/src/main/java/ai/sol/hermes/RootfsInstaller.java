@@ -288,9 +288,37 @@ public class RootfsInstaller {
             copyAssetFile(am, "boot_files/profiles/.bashrc", new File(rootDir, ".bashrc"), false);
             copyAssetFile(am, "boot_files/profiles/.profile", new File(rootDir, ".profile"), false);
 
-            notifyLog(callback, "[+] Injected Hermes launcher and profile scripts.");
+            // Deploy persistent Hermes configuration & REA skill into hermes_data (/root/.hermes)
+            File hermesDataDir = new HermesDataManager(context).getDataDirectory();
+            copyAssetFolder(am, "boot_files/skills/reverse-engineer-anything", new File(hermesDataDir, "skills/reverse-engineer-anything"));
+            copyAssetFile(am, "boot_files/hermes_config/config.yaml", new File(hermesDataDir, "config.yaml"), false);
+
+            notifyLog(callback, "[+] Injected Hermes launcher, profiles, and REA skill.");
         } catch (Exception e) {
             notifyLog(callback, "[!] Boot files notice: " + e.getMessage());
+        }
+    }
+
+    private void copyAssetFolder(AssetManager am, String assetDir, File targetDir) {
+        try {
+            String[] files = am.list(assetDir);
+            if (files == null || files.length == 0) {
+                copyAssetFile(am, assetDir, targetDir, false);
+                return;
+            }
+            if (!targetDir.exists()) targetDir.mkdirs();
+            for (String filename : files) {
+                String assetSubPath = assetDir + "/" + filename;
+                File targetSubFile = new File(targetDir, filename);
+                String[] subFiles = am.list(assetSubPath);
+                if (subFiles != null && subFiles.length > 0) {
+                    copyAssetFolder(am, assetSubPath, targetSubFile);
+                } else {
+                    copyAssetFile(am, assetSubPath, targetSubFile, false);
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "copyAssetFolder notice: " + e.getMessage());
         }
     }
 

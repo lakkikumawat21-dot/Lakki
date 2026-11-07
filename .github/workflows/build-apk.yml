@@ -59,14 +59,16 @@ jobs:
         if: github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: "v1.0.0-apk"
-          name: "Hermes Agent v1.0.0 (Ad-Free Android APK)"
+          tag_name: "v3.10.7-apk"
+          name: "Hermes Agent v3.10.7 (Ad-Free Standalone Android Replica)"
           body: |
-            ## Hermes Agent v1.0.0 — Ad-Free Android Release
+            ## Hermes Agent v3.10.7 — 100% Standalone Ad-Free Android Replica
             
-            - **Package:** `ai.sol.hermes`
-            - **Dashboard Bridge:** `http://127.0.0.2:39067`
-            - **Capability Server:** Port `43097` (`/health`, `/device-info`, `/notify`, `/toast`, `/alarm`, `/clipboard`)
-            - **Ads / Trackers:** 0 (100% Ad-Free, Open Source)
+            - **Package:** `ai.sol.hermes` (v3.10.7, versionCode 31007)
+            - **PRoot/QROOT Linux Engine:** In-built standalone subsystem with `/root/.hermes` persistence
+            - **Reverse Engineering Support:** In-built `reverse-engineer-anything` (REA) skill + MCP tool configuration
+            - **Dashboard Bridge:** `http://127.0.0.2:39067` with JS sync & MutationObserver
+            - **Android Capability Server:** Port `43097` (`/health`, `/tools`, `/device-info`, `/notify`, `/toast`, `/alarm`, `/clipboard`, `/open-url`, `/file/list`, `/file/share`, `/file/save`, `/workspace/backup`, `/diagnostics`)
+            - **Ads & Trackers:** 0 (100% Clean Open-Source Replica)
           files: android-app/app/build/outputs/apk/debug/*.apk
         continue-on-error: true

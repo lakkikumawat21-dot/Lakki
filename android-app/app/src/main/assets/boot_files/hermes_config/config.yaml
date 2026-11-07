@@ -1,0 +1,7 @@
+mcp_servers:
+  rea:
+    command: node
+    args:
+      - /usr/local/lib/rea/scripts/rea.mjs
+      - mcp
+    enabled: true

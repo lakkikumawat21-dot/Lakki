@@ -335,7 +335,7 @@ public class MainActivity extends AppCompatActivity {
                 // Inject JS Synchronization and MutationObserver hooks matching reference app
                 String syncHook = "javascript:(function() {" +
                         "  window.__HERMES_BRIDGE_READY = true;" +
-                        "  window.__HERMES_VERSION = '1.1.0';" +
+                        "  window.__HERMES_VERSION = '3.10.7';" +
                         "  if (!window.__hermes_observer) {" +
                         "    window.__hermes_observer = new MutationObserver(function() {});" +
                         "    window.__hermes_observer.observe(document.body || document.documentElement, {childList: true, subtree: true});" +

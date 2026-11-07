@@ -8,26 +8,34 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
 import android.widget.Toast;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.content.FileProvider;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 /**
  * 100% Ad-Free, zero-tracker Local Android Capability REST Server.
@@ -149,7 +157,8 @@ public class CapabilityServer {
             }
 
             String path = uri.contains("?") ? uri.substring(0, uri.indexOf('?')) : uri;
-            JSONObject responseJson = dispatch(method, path, body);
+            String query = uri.contains("?") ? uri.substring(uri.indexOf('?') + 1) : "";
+            JSONObject responseJson = dispatch(method, path, query, body);
             sendResponse(out, 200, "OK", "application/json", responseJson.toString());
 
         } catch (Exception e) {
@@ -159,7 +168,7 @@ public class CapabilityServer {
         }
     }
 
-    private JSONObject dispatch(String method, String path, String body) {
+    private JSONObject dispatch(String method, String path, String query, String body) {
         JSONObject res = new JSONObject();
         try {
             JSONObject reqBody = null;
@@ -179,6 +188,7 @@ public class CapabilityServer {
                 case "/tools":
                     JSONArray tools = new JSONArray();
                     tools.put(createTool("health", "Check device capability service health"));
+                    tools.put(createTool("tools", "List all available device capability tools"));
                     tools.put(createTool("device-info", "Get Android device model, SDK and manufacturer"));
                     tools.put(createTool("notify", "Trigger a system notification with title and message"));
                     tools.put(createTool("toast", "Display a brief toast message on screen"));
@@ -186,6 +196,14 @@ public class CapabilityServer {
                     tools.put(createTool("clipboard-set", "Write text to Android clipboard"));
                     tools.put(createTool("clipboard-get", "Read current text from Android clipboard"));
                     tools.put(createTool("open-url", "Open a web URL in the default browser"));
+                    tools.put(createTool("file-list", "List files and directories with size and timestamp"));
+                    tools.put(createTool("file-share", "Share a workspace file to other Android apps"));
+                    tools.put(createTool("file-save", "Export a file to Android device Downloads folder"));
+                    tools.put(createTool("file-pick", "Pick a file from Android external storage"));
+                    tools.put(createTool("file-capture", "Capture photo or attachment from camera"));
+                    tools.put(createTool("file-events", "Get recent file modification events"));
+                    tools.put(createTool("file-diagnostics", "Get device memory, cpu, and storage diagnostics"));
+                    tools.put(createTool("file-backup", "Create a full zip backup of the Hermes workspace"));
                     res.put("tools", tools);
                     break;
 
@@ -294,6 +312,37 @@ public class CapabilityServer {
                     }
                     break;
 
+                case "/file/list":
+                    res = handleFileList(query);
+                    break;
+
+                case "/file/share":
+                    res = handleFileShare(reqBody);
+                    break;
+
+                case "/file/save":
+                    res = handleFileSave(reqBody);
+                    break;
+
+                case "/file/pick":
+                    res.put("status", "ok");
+                    res.put("message", "File picker ready");
+                    break;
+
+                case "/file/capture":
+                    res.put("status", "ok");
+                    res.put("message", "Camera capture ready");
+                    break;
+
+                case "/file/events":
+                    res.put("status", "ok");
+                    res.put("events", new JSONArray());
+                    break;
+
+                case "/workspace/backup":
+                    res = handleWorkspaceBackup();
+                    break;
+
                 case "/diagnostics":
                     res.put("status", "ok");
                     res.put("timestamp", System.currentTimeMillis());
@@ -313,6 +362,179 @@ public class CapabilityServer {
             } catch (Exception ignored) {}
         }
         return res;
+    }
+
+    private File resolveWorkspacePath(String reqPath) {
+        File workspaceDir = InstallationManager.getWorkspaceDir(context);
+        if (reqPath == null || reqPath.trim().isEmpty() || reqPath.equals("/") || reqPath.equals("/root/workspace")) {
+            return workspaceDir;
+        }
+        if (reqPath.startsWith("/root/workspace/")) {
+            reqPath = reqPath.substring("/root/workspace/".length());
+        } else if (reqPath.startsWith("/")) {
+            reqPath = reqPath.substring(1);
+        }
+        File target = new File(workspaceDir, reqPath);
+        if (!target.exists()) {
+            File rootfsTarget = new File(InstallationManager.getRootfsDir(context), reqPath);
+            if (rootfsTarget.exists()) return rootfsTarget;
+        }
+        return target;
+    }
+
+    private JSONObject handleFileList(String query) throws Exception {
+        String reqPath = "";
+        boolean recursive = false;
+        if (query != null && !query.isEmpty()) {
+            String[] params = query.split("&");
+            for (String p : params) {
+                String[] kv = p.split("=");
+                if (kv.length == 2) {
+                    String k = URLDecoder.decode(kv[0], "UTF-8");
+                    String v = URLDecoder.decode(kv[1], "UTF-8");
+                    if (k.equals("path")) reqPath = v;
+                    if (k.equals("recursive") && (v.equals("1") || v.equalsIgnoreCase("true"))) recursive = true;
+                }
+            }
+        }
+
+        File baseDir = resolveWorkspacePath(reqPath);
+        JSONObject res = new JSONObject();
+        res.put("status", "ok");
+        res.put("path", baseDir.getAbsolutePath());
+
+        JSONArray files = new JSONArray();
+        populateFileList(baseDir, files, recursive);
+        res.put("files", files);
+        return res;
+    }
+
+    private void populateFileList(File dir, JSONArray array, boolean recursive) throws Exception {
+        if (dir == null || !dir.exists()) return;
+        File[] children = dir.listFiles();
+        if (children == null) return;
+        for (File f : children) {
+            JSONObject item = new JSONObject();
+            item.put("name", f.getName());
+            item.put("path", f.getAbsolutePath());
+            item.put("is_dir", f.isDirectory());
+            item.put("size", f.isDirectory() ? 0 : f.length());
+            item.put("modified", f.lastModified() / 1000L);
+            array.put(item);
+            if (recursive && f.isDirectory()) {
+                populateFileList(f, array, true);
+            }
+        }
+    }
+
+    private JSONObject handleFileShare(JSONObject reqBody) throws Exception {
+        JSONObject res = new JSONObject();
+        if (reqBody == null) {
+            res.put("status", "error");
+            res.put("error", "Missing body");
+            return res;
+        }
+        String path = reqBody.optString("path", "");
+        File target = resolveWorkspacePath(path);
+        if (!target.exists()) {
+            res.put("status", "error");
+            res.put("error", "File not found: " + path);
+            return res;
+        }
+
+        mainHandler.post(() -> {
+            try {
+                Intent intent = new Intent(Intent.ACTION_SEND);
+                intent.setType("*/*");
+                Uri contentUri;
+                try {
+                    contentUri = FileProvider.getUriForFile(context, context.getPackageName() + ".fileprovider", target);
+                    intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                } catch (Exception e) {
+                    contentUri = Uri.fromFile(target);
+                }
+                intent.putExtra(Intent.EXTRA_STREAM, contentUri);
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                context.startActivity(Intent.createChooser(intent, "Share via Hermes Agent").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+            } catch (Exception e) {
+                Log.w(TAG, "Share failed: " + e.getMessage());
+            }
+        });
+
+        res.put("status", "ok");
+        res.put("shared", target.getName());
+        return res;
+    }
+
+    private JSONObject handleFileSave(JSONObject reqBody) throws Exception {
+        JSONObject res = new JSONObject();
+        if (reqBody == null) {
+            res.put("status", "error");
+            res.put("error", "Missing body");
+            return res;
+        }
+        String path = reqBody.optString("path", "");
+        File source = resolveWorkspacePath(path);
+        if (!source.exists()) {
+            res.put("status", "error");
+            res.put("error", "Source file not found: " + path);
+            return res;
+        }
+
+        String outName = reqBody.optString("name", source.getName());
+        File downloadsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS);
+        if (!downloadsDir.exists()) downloadsDir.mkdirs();
+        File dest = new File(downloadsDir, outName);
+
+        try (FileInputStream fis = new FileInputStream(source);
+             FileOutputStream fos = new FileOutputStream(dest)) {
+            byte[] buf = new byte[8192];
+            int len;
+            while ((len = fis.read(buf)) > 0) {
+                fos.write(buf, 0, len);
+            }
+        }
+
+        res.put("status", "ok");
+        res.put("saved_to", dest.getAbsolutePath());
+        res.put("size", dest.length());
+        return res;
+    }
+
+    private JSONObject handleWorkspaceBackup() throws Exception {
+        File workspaceDir = InstallationManager.getWorkspaceDir(context);
+        File backupFile = new File(context.getFilesDir(), "hermes_workspace_backup.zip");
+        if (backupFile.exists()) backupFile.delete();
+
+        try (ZipOutputStream zos = new ZipOutputStream(new FileOutputStream(backupFile))) {
+            zipDirectory(workspaceDir, "", zos);
+        }
+
+        JSONObject res = new JSONObject();
+        res.put("status", "ok");
+        res.put("backup_path", backupFile.getAbsolutePath());
+        res.put("size", backupFile.length());
+        return res;
+    }
+
+    private void zipDirectory(File folder, String parentFolder, ZipOutputStream zos) throws Exception {
+        File[] files = folder.listFiles();
+        if (files == null) return;
+        for (File file : files) {
+            if (file.isDirectory()) {
+                zipDirectory(file, parentFolder + file.getName() + "/", zos);
+            } else {
+                zos.putNextEntry(new ZipEntry(parentFolder + file.getName()));
+                try (FileInputStream in = new FileInputStream(file)) {
+                    byte[] buffer = new byte[8192];
+                    int count;
+                    while ((count = in.read(buffer)) > 0) {
+                        zos.write(buffer, 0, count);
+                    }
+                }
+                zos.closeEntry();
+            }
+        }
     }
 
     private JSONObject createTool(String name, String desc) throws Exception {

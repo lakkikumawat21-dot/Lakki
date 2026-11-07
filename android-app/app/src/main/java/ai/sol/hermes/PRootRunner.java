@@ -106,6 +106,7 @@ public class PRootRunner {
             env.put("HERMES_AGENT_ROOT", "/usr/local/lib/hermes-agent");
             env.put("HERMES_BIN", "/usr/local/bin/hermes");
             env.put("HERMES_ANDROID_CAPABILITY_PORT", "43097");
+            env.put("HERMES_ANDROID_CAPABILITY_TOKEN", "hermes_local_bridge_token");
             env.put("HERMES_REAL_HOME", "/root");
             env.put("HERMES_GATEWAY_DETACHED", "1");
             env.put("HERMES_DISABLE_LAZY_INSTALLS", "1");
@@ -123,7 +124,7 @@ public class PRootRunner {
             env.put("USER", "root");
             env.put("TERM", "xterm-256color");
             env.put("TMPDIR", "/tmp");
-            env.put("PATH", "/usr/local/lib/hermes-agent/.hermes/bin:/root/.local/bin:/usr/local/bin:/root/.hermes/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin");
+            env.put("PATH", "/opt/qroot/bin:/usr/local/lib/hermes-agent/.hermes/bin:/usr/local/lib/hermes-agent/venv/bin:/usr/local/bin:/root/.local/bin:/root/.hermes/node/bin:/root/.hermes/bin:/root/.hermes/tools/node-26.12.1-linux-arm64/bin:/root/.hermes/tools/python-3.14.9+20241021-linux-arm64/bin:/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin");
 
             engineProcess = pb.start();
             isRunning = true;

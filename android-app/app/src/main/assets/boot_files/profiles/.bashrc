@@ -103,3 +103,6 @@ case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$P
 export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 export PLAYWRIGHT_SKIP_DEPENDENCY_CHECK=1
 export AGENT_BROWSER_ARGS="--no-sandbox --disable-setuid-sandbox --disable-gpu --disable-dev-shm-usage"
+export HERMES_ANDROID_CAPABILITY_PORT=43097
+export HERMES_ANDROID_CAPABILITY_TOKEN=hermes_local_bridge_token
+

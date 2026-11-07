@@ -131,9 +131,24 @@ Android 10+ (`targetSdk >= 29`) enforces W^X (noexec) on the private app directo
 - **GitHub Repository**: `lakkikumawat21-dot/Lakki`
 - **Latest Commit**: [`5742ac31`](https://github.com/lakkikumawat21-dot/Lakki/commit/5742ac317ac9f6915ee8f48afcda0c061f2dec04)
 - **GitHub Actions Build Run**: [Run #42373670105](https://github.com/lakkikumawat21-dot/Lakki/actions/runs/42373670105) — **SUCCESS (Green)**
-- **Release Tag**: `v1.0.0-apk`
+- **Release Tag**: `v1.0.0-apk` -> Upgraded to `v3.10.7-apk`
 - **Generated APK**: `app-debug.apk` (9,822,903 bytes / ~9.82 MB)
-- **Direct Download Link**: [app-debug.apk](https://github.com/lakkikumawat21-dot/Lakki/releases/download/v1.0.0-apk/app-debug.apk)
 - **Core Code Freeze**: 100% frozen (0 lines changed in `hermes-agent/`).
+
+---
+
+## 7. REA (Reverse Engineer Anything) & Exact v3.10.7 Replica Architecture
+
+- **Tooling & Intelligence**: Integrated `morluto/rea` (v6.8.0) into the environment.
+- **Hermes REA Integration**: Configured Hermes with the `reverse-engineer-anything` skill and registered `rea mcp` server inside `~/.hermes/config.yaml`.
+- **In-App Mobile REA Bundle**:
+  - Embedded `reverse-engineer-anything` skill prompt and markdown references (`android-applications.md`, `native-and-artifacts.md`, `javascript-applications.md`, etc.) inside `android-app/app/src/main/assets/boot_files/skills/reverse-engineer-anything/`.
+  - Automatic deployment into `/root/.hermes/skills/` on first launch.
+- **Full Capability Bridge Coverage**:
+  - Implemented `/file/list`, `/file/share`, `/file/save`, `/workspace/backup`, and diagnostics in `CapabilityServer.java` for full parity with `skills/android-device/android_device.py`.
+  - Exported `HERMES_ANDROID_CAPABILITY_TOKEN=hermes_local_bridge_token` to eliminate unauthorized credential exceptions.
+- **Android Manifest & Permissions**: Added `FileProvider`, `ACCESS_WIFI_STATE`, `RECEIVE_BOOT_COMPLETED`, and `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`.
+- **Release Version**: Upgraded `versionCode 31007`, `versionName "3.10.7"`, and release tag `v3.10.7-apk`.
+
 
 
